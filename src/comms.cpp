@@ -42,7 +42,8 @@
 #include "ros/console.h"
 #include "serial/serial.h"
 #include "um7/registers.h"
-
+#include <chrono>
+#include <thread>
 namespace um7
 {
 
@@ -207,12 +208,12 @@ bool Comms::sendWaitAck(const Accessor_& r)
       int16_t received = receive();
       if (received == r.index)
       {
-        ROS_DEBUG("Message %02x ack received.", received);
+        ROS_WARN("Message %02x ack received.", received);
         return true;
       }
       else if (received == -1)
       {
-        ROS_DEBUG("Serial read timed out waiting for ack. Attempting to retransmit.");
+        ROS_WARN("Serial read timed out waiting for ack. Attempting to retransmit.");
         break;
       }
     }

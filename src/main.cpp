@@ -33,6 +33,9 @@
  *
  */
 #include <string>
+#include <array>
+#include <iostream>
+#include <bitset>
 
 #include "geometry_msgs/Vector3Stamped.h"
 #include "ros/ros.h"
@@ -45,11 +48,13 @@
 #include "um7/registers.h"
 #include "um7/Reset.h"
 
+
 const char VERSION[10] = "0.0.2";   // um7_driver version
 
 // Don't try to be too clever. Arrival of this message triggers
 // us to publish everything we have.
-const uint8_t TRIGGER_PACKET = DREG_EULER_PHI_THETA;
+const uint8_t TRIGGER_PACKET = DREG_QUAT_AB;
+
 
 namespace OutputAxisOptions
 {
@@ -114,29 +119,39 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
 {
   um7::Registers r;
 
+  // Setting Communication Register
   uint32_t comm_reg = (BAUD_115200 << COM_BAUD_START);
   r.communication.set(0, comm_reg);
-  if (!sensor->sendWaitAck(r.comrate2))
+
+  if (!sensor->sendWaitAck(r.communication))
   {
-    throw std::runtime_error("Unable to set CREG_COM_SETTINGS.");
+    throw std::runtime_error("Unable to set Baud Rates.");
+  }
+  else{
+    std::cout << "Successfully setting up BAUDRATE for UM7: " << 115200 << std::endl;
   }
 
   // set the broadcast rate of the device
   int rate;
-  private_nh->param<int>("update_rate", rate, 20);
+  private_nh->param<int>("update_rate", rate, 255);
   if (rate < 20 || rate > 255)
   {
     ROS_WARN("Potentially unsupported update rate of %d", rate);
   }
 
   uint32_t rate_bits = static_cast<uint32_t>(rate);
+
   ROS_INFO("Setting update rate to %uHz", rate);
-  uint32_t raw_rate = (rate_bits << RATE2_ALL_RAW_START);
+  // uint32_t raw_rate = (rate_bits << RATE2_ALL_RAW_START);
+  uint32_t raw_rate = 0;
   r.comrate2.set(0, raw_rate);
   if (!sensor->sendWaitAck(r.comrate2))
   {
     throw std::runtime_error("Unable to set CREG_COM_RATES2.");
   }
+  std::bitset<32> CREG_COM_RATES2_BITS(r.comrate2.get(0));
+  std::cout << "Setting CREG_COM_RATES2 to " << CREG_COM_RATES2_BITS << std::endl;
+  // ROS_INFO("Setting CREG_COM_RATES2 to %d", r.comrate2.get(0));
 
   uint32_t proc_rate = (rate_bits << RATE4_ALL_PROC_START);
   r.comrate4.set(0, proc_rate);
@@ -144,21 +159,29 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   {
     throw std::runtime_error("Unable to set CREG_COM_RATES4.");
   }
+  std::bitset<32> CREG_COM_RATES4_BITS(r.comrate4.get(0));
+  std::cout << "Setting CREG_COM_RATES4 to " << CREG_COM_RATES4_BITS << std::endl;
+  // ROS_INFO("Setting CREG_COM_RATES4 to %d", r.comrate4.get(0));
 
-  uint32_t misc_rate = (rate_bits << RATE5_EULER_START) | (rate_bits << RATE5_QUAT_START);
+
+  // uint32_t misc_rate = (rate_bits << RATE5_EULER_START) | (rate_bits << RATE5_QUAT_START);
+  uint32_t misc_rate = rate_bits << RATE5_QUAT_START;
   r.comrate5.set(0, misc_rate);
   if (!sensor->sendWaitAck(r.comrate5))
   {
     throw std::runtime_error("Unable to set CREG_COM_RATES5.");
   }
+  std::bitset<32> CREG_COM_RATES5_BITS(r.comrate5.get(0));
+  std::cout << "Setting CREG_COM_RATES5 to " << CREG_COM_RATES5_BITS << std::endl;
+  // ROS_INFO("Setting CREG_COM_RATES5 to %d", r.comrate5.get(0));
 
-  uint32_t health_rate = (5 << RATE6_HEALTH_START);  // note:  5 gives 2 hz rate
+  uint32_t health_rate = (0 << RATE6_HEALTH_START);  // note:  5 gives 2 hz rate
   r.comrate6.set(0, health_rate);
   if (!sensor->sendWaitAck(r.comrate6))
   {
     throw std::runtime_error("Unable to set CREG_COM_RATES6.");
   }
-
+  ROS_INFO("Setting CREG_COM_RATES6 to %d", r.comrate6.get(0));
 
   // Options available using parameters)
   uint32_t misc_config_reg = 0;  // initialize all options off
@@ -373,41 +396,41 @@ void publishMsgs(um7::Registers& r, ros::NodeHandle* imu_nh, sensor_msgs::Imu& i
   }
 
   // Euler attitudes.  transform to ROS axes
-  if (rpy_pub.getNumSubscribers() > 0)
-  {
-    geometry_msgs::Vector3Stamped rpy_msg;
-    rpy_msg.header = imu_msg.header;
+  // if (rpy_pub.getNumSubscribers() > 0)
+  // {
+  //   geometry_msgs::Vector3Stamped rpy_msg;
+  //   rpy_msg.header = imu_msg.header;
 
-    switch (axes)
-    {
-      case OutputAxisOptions::ENU:
-      {
-        // world frame
-        rpy_msg.vector.x = r.euler.get_scaled(1);
-        rpy_msg.vector.y = r.euler.get_scaled(0);
-        rpy_msg.vector.z = -r.euler.get_scaled(2);
-        break;
-      }
-      case OutputAxisOptions::ROBOT_FRAME:
-      {
-        rpy_msg.vector.x =  r.euler.get_scaled(0);
-        rpy_msg.vector.y = -r.euler.get_scaled(1);
-        rpy_msg.vector.z = -r.euler.get_scaled(2);
-        break;
-      }
-      case OutputAxisOptions::DEFAULT:
-      {
-        rpy_msg.vector.x = r.euler.get_scaled(0);
-        rpy_msg.vector.y = r.euler.get_scaled(1);
-        rpy_msg.vector.z = r.euler.get_scaled(2);
-        break;
-      }
-      default:
-        ROS_ERROR("OuputAxes enum value invalid");
-    }
+  //   switch (axes)
+  //   {
+  //     case OutputAxisOptions::ENU:
+  //     {
+  //       // world frame
+  //       rpy_msg.vector.x = r.euler.get_scaled(1);
+  //       rpy_msg.vector.y = r.euler.get_scaled(0);
+  //       rpy_msg.vector.z = -r.euler.get_scaled(2);
+  //       break;
+  //     }
+  //     case OutputAxisOptions::ROBOT_FRAME:
+  //     {
+  //       rpy_msg.vector.x =  r.euler.get_scaled(0);
+  //       rpy_msg.vector.y = -r.euler.get_scaled(1);
+  //       rpy_msg.vector.z = -r.euler.get_scaled(2);
+  //       break;
+  //     }
+  //     case OutputAxisOptions::DEFAULT:
+  //     {
+  //       rpy_msg.vector.x = r.euler.get_scaled(0);
+  //       rpy_msg.vector.y = r.euler.get_scaled(1);
+  //       rpy_msg.vector.z = r.euler.get_scaled(2);
+  //       break;
+  //     }
+  //     default:
+  //       ROS_ERROR("OuputAxes enum value invalid");
+  //   }
 
-    rpy_pub.publish(rpy_msg);
-  }
+  //   rpy_pub.publish(rpy_msg);
+  // }
 
   // Temperature
   if (temp_pub.getNumSubscribers() > 0)
@@ -433,11 +456,6 @@ int main(int argc, char **argv)
   private_nh.param<std::string>("port", port, "/dev/ttyUSB0");
   private_nh.param<int32_t>("baud", baud, 115200);
 
-  serial::Serial ser;
-  ser.setPort(port);
-  ser.setBaudrate(baud);
-  serial::Timeout to = serial::Timeout(50, 50, 0, 50, 0);
-  ser.setTimeout(to);
 
   sensor_msgs::Imu imu_msg;
   double linear_acceleration_stdev, angular_velocity_stdev;
@@ -462,8 +480,8 @@ int main(int argc, char **argv)
   // Enable converting from NED to ENU by default
   bool tf_ned_to_enu;
   bool orientation_in_robot_frame;
-  private_nh.param<bool>("tf_ned_to_enu", tf_ned_to_enu, true);
-  private_nh.param<bool>("orientation_in_robot_frame", orientation_in_robot_frame, false);
+  private_nh.param<bool>("tf_ned_to_enu", tf_ned_to_enu, false);
+  private_nh.param<bool>("orientation_in_robot_frame", orientation_in_robot_frame, true);
   OutputAxisOption axes = OutputAxisOptions::DEFAULT;
   if (tf_ned_to_enu && orientation_in_robot_frame)
   {
@@ -497,15 +515,27 @@ int main(int argc, char **argv)
 
   // Real Time Loop
   bool first_failure = true;
+  int i = 0;
+
+
+  serial::Serial ser;
+
+  serial::Timeout to = serial::Timeout(50, 50, 0, 50, 0);
+  ser.setTimeout(to);
+
+
   while (ros::ok())
   {
     try
     {
+      std::cout << "Connecting to serial with baud rate " << baud << std::endl;
+      ser.setPort(port);
+      ser.setBaudrate(baud);
       ser.open();
     }
     catch (const serial::IOException& e)
     {
-        ROS_WARN("um7_driver was unable to connect to port %s.", port.c_str());
+        ROS_WARN("um7_driver was unable to connect to port %s with baud rate %i", port.c_str(), ser.getBaudrate());
     }
     if (ser.isOpen())
     {

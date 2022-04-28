@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Params -->
+    <rosparam file="$(find um7_driver)/config/um7.yaml" />
+
+    <!-- Nodes -->
+    <node pkg="um7" type="um7_driver" name="um7_driver" output="screen"/>
+    <!-- <node pkg="um7" type="imu" name="imu" output="screen" /> -->
+</launch>
