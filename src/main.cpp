@@ -119,16 +119,16 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   um7::Registers r;
 
   // Setting Communication Register
-  uint32_t comm_reg = (BAUD_115200 << COM_BAUD_START);
-  r.communication.set(0, comm_reg);
-  if (!sensor->sendWaitAck(r.communication))
-  {
-    throw std::runtime_error("Unable to set Baud Rates.");
-  }
-  else{
-    std::bitset<32> CREG_COM_SETTING_BITS(comm_reg);
-    std::cout << "Successfully setting up BAUDRATE for UM7: " << CREG_COM_SETTING_BITS << std::endl;
-  }
+  // uint32_t comm_reg = (BAUD_115200 << COM_BAUD_START);
+  // r.communication.set(0, comm_reg);
+  // if (!sensor->sendWaitAck(r.communication))
+  // {
+  //   throw std::runtime_error("Unable to set Baud Rates.");
+  // }
+  // else{
+  //   std::bitset<32> CREG_COM_SETTING_BITS(comm_reg);
+  //   std::cout << "Successfully setting up BAUDRATE for UM7: " << CREG_COM_SETTING_BITS << std::endl;
+  // }
 
   // set the broadcast rate of the device
   // Unused sensor hardcoded to 0 on startup

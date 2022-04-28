@@ -3,7 +3,7 @@ sensor_setup: true
 
 ## Serial parameters
 port: "/dev/ttyUSB0"
-baud: 115200
+baud: 921600
 
 ## IMU parameters
 frame_id: "imu_link"
