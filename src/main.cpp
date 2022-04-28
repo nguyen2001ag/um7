@@ -566,7 +566,7 @@ int main(int argc, char **argv)
     }
     catch (const serial::IOException& e)
     {
-        ROS_WARN("um7_driver was unable to connect to port %s with baud rate %i", port.c_str(), ser.getBaudrate());
+      ROS_WARN("um7_driver was unable to connect to port %s with baud rate %i - Error: %s", port.c_str(), ser.getBaudrate(), e.what());
     }
     if (ser.isOpen())
     {
