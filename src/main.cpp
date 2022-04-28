@@ -55,7 +55,6 @@ const char VERSION[10] = "0.0.2";   // um7_driver version
 // us to publish everything we have.
 const uint8_t TRIGGER_PACKET = DREG_QUAT_AB;
 
-
 namespace OutputAxisOptions
 {
   enum OutputAxisOption
@@ -69,32 +68,32 @@ typedef OutputAxisOptions::OutputAxisOption OutputAxisOption;
  * Function generalizes the process of writing an XYZ vector into consecutive
  * fields in UM7 registers.
  */
-template<typename RegT>
-void configureVector3(um7::Comms* sensor, const um7::Accessor<RegT>& reg,
-                      std::string param, std::string human_name)
-{
-  if (reg.length != 3)
-  {
-    throw std::logic_error("configureVector3 may only be used with 3-field registers!");
-  }
+// template<typename RegT>
+// void configureVector3(um7::Comms* sensor, const um7::Accessor<RegT>& reg,
+//                       std::string param, std::string human_name)
+// {
+//   if (reg.length != 3)
+//   {
+//     throw std::logic_error("configureVector3 may only be used with 3-field registers!");
+//   }
 
-  if (ros::param::has(param))
-  {
-    double x, y, z;
-    ros::param::get(param + "/x", x);
-    ros::param::get(param + "/y", y);
-    ros::param::get(param + "/z", z);
-    ROS_INFO_STREAM("Configuring " << human_name << " to ("
-                    << x << ", " << y << ", " << z << ")");
-    reg.set_scaled(0, x);
-    reg.set_scaled(1, y);
-    reg.set_scaled(2, z);
-    if (sensor->sendWaitAck(reg))
-    {
-      throw std::runtime_error("Unable to configure vector.");
-    }
-  }
-}
+//   if (ros::param::has(param))
+//   {
+//     double x, y, z;
+//     ros::param::get(param + "/x", x);
+//     ros::param::get(param + "/y", y);
+//     ros::param::get(param + "/z", z);
+//     ROS_INFO_STREAM("Configuring " << human_name << " to ("
+//                     << x << ", " << y << ", " << z << ")");
+//     reg.set_scaled(0, x);
+//     reg.set_scaled(1, y);
+//     reg.set_scaled(2, z);
+//     if (sensor->sendWaitAck(reg))
+//     {
+//       throw std::runtime_error("Unable to configure vector.");
+//     }
+//   }
+// }
 
 /**
  * Function generalizes the process of commanding the UM7 via one of its command
@@ -122,18 +121,22 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   // Setting Communication Register
   uint32_t comm_reg = (BAUD_115200 << COM_BAUD_START);
   r.communication.set(0, comm_reg);
-
   if (!sensor->sendWaitAck(r.communication))
   {
     throw std::runtime_error("Unable to set Baud Rates.");
   }
   else{
-    std::cout << "Successfully setting up BAUDRATE for UM7: " << 115200 << std::endl;
+    std::bitset<32> CREG_COM_SETTING_BITS(comm_reg);
+    std::cout << "Successfully setting up BAUDRATE for UM7: " << CREG_COM_SETTING_BITS << std::endl;
   }
 
   // set the broadcast rate of the device
+  // Unused sensor hardcoded to 0 on startup
+
   int rate;
-  private_nh->param<int>("update_rate", rate, 255);
+  if (!private_nh->param<int>("/update_rate", rate, 255)){
+    ROS_WARN("configureSensor : Param update_rate not found, set to 255");
+  }
   if (rate < 20 || rate > 255)
   {
     ROS_WARN("Potentially unsupported update rate of %d", rate);
@@ -142,7 +145,7 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   uint32_t rate_bits = static_cast<uint32_t>(rate);
 
   ROS_INFO("Setting update rate to %uHz", rate);
-  // uint32_t raw_rate = (rate_bits << RATE2_ALL_RAW_START);
+  // uint32_t raw_rate = (rate_bits << RATE2_ALL_RAW_START);  ## Use this one if you want all raw data
   uint32_t raw_rate = 0;
   r.comrate2.set(0, raw_rate);
   if (!sensor->sendWaitAck(r.comrate2))
@@ -151,17 +154,31 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   }
   std::bitset<32> CREG_COM_RATES2_BITS(r.comrate2.get(0));
   std::cout << "Setting CREG_COM_RATES2 to " << CREG_COM_RATES2_BITS << std::endl;
-  // ROS_INFO("Setting CREG_COM_RATES2 to %d", r.comrate2.get(0));
 
-  uint32_t proc_rate = (rate_bits << RATE4_ALL_PROC_START);
-  r.comrate4.set(0, proc_rate);
+
+  uint32_t proc_rate = ((rate_bits << RATE3_PROC_ACCEL_START) 
+                        | (rate_bits << RATE3_PROC_GYRO_START) 
+                        | (rate_bits << RATE3_PROC_MAG_START));
+  r.comrate3.set(0, proc_rate);
+  if (!sensor->sendWaitAck(r.comrate3))
+  {
+    throw std::runtime_error("Unable to set CREG_COM_RATES3.");
+  }
+  std::bitset<32> CREG_COM_RATES3_BITS(r.comrate3.get(0));
+  std::cout << "Setting CREG_COM_RATES3 to " << CREG_COM_RATES3_BITS << std::endl;
+  
+
+  // ******************** Uncomment this if you want all the processed data ******************
+  // uint32_t proc_rate = (rate_bits << RATE4_ALL_PROC_START);
+  uint32_t all_proc_rate = (rate_bits << RATE4_ALL_PROC_START);
+  r.comrate4.set(0, all_proc_rate);
   if (!sensor->sendWaitAck(r.comrate4))
   {
     throw std::runtime_error("Unable to set CREG_COM_RATES4.");
   }
   std::bitset<32> CREG_COM_RATES4_BITS(r.comrate4.get(0));
   std::cout << "Setting CREG_COM_RATES4 to " << CREG_COM_RATES4_BITS << std::endl;
-  // ROS_INFO("Setting CREG_COM_RATES4 to %d", r.comrate4.get(0));
+  ROS_INFO("Setting CREG_COM_RATES4 to %d", r.comrate4.get(0));
 
 
   // uint32_t misc_rate = (rate_bits << RATE5_EULER_START) | (rate_bits << RATE5_QUAT_START);
@@ -175,6 +192,8 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
   std::cout << "Setting CREG_COM_RATES5 to " << CREG_COM_RATES5_BITS << std::endl;
   // ROS_INFO("Setting CREG_COM_RATES5 to %d", r.comrate5.get(0));
 
+
+  // ****************************** CHANGE THIS IF YOU WANT HEALTH PACKAGE ********************
   uint32_t health_rate = (0 << RATE6_HEALTH_START);  // note:  5 gives 2 hz rate
   r.comrate6.set(0, health_rate);
   if (!sensor->sendWaitAck(r.comrate6))
@@ -188,7 +207,9 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
 
   // Optionally disable mag updates in the sensor's EKF.
   bool mag_updates;
-  private_nh->param<bool>("mag_updates", mag_updates, true);
+  if (!private_nh->param<bool>("/mag_updates", mag_updates, true)){
+    ROS_WARN("configureSensor : Param mag_updates not found, set to true");
+  }
   if (mag_updates)
   {
     misc_config_reg |= MAG_UPDATES_ENABLED;
@@ -200,7 +221,9 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
 
   // Optionally enable quaternion mode .
   bool quat_mode;
-  private_nh->param<bool>("quat_mode", quat_mode, true);
+  if (!private_nh->param<bool>("/quat_mode", quat_mode, true)){
+    ROS_WARN("configureSensor : Param quat_mode not found, set to true");
+  }
   if (quat_mode)
   {
     misc_config_reg |= QUATERNION_MODE_ENABLED;
@@ -218,7 +241,9 @@ void configureSensor(um7::Comms* sensor, ros::NodeHandle *private_nh)
 
   // Optionally disable performing a zero gyros command on driver startup.
   bool zero_gyros;
-  private_nh->param<bool>("zero_gyros", zero_gyros, true);
+  if (!private_nh->param<bool>("/zero_gyros", zero_gyros, true)){
+    ROS_WARN("configureSensor : Param zero_gyros not found, set to true");
+  }
   if (zero_gyros) sendCommand(sensor, r.cmd_zero_gyros, "zero gyroscopes");
 }
 
@@ -433,12 +458,12 @@ void publishMsgs(um7::Registers& r, ros::NodeHandle* imu_nh, sensor_msgs::Imu& i
   // }
 
   // Temperature
-  if (temp_pub.getNumSubscribers() > 0)
-  {
-    std_msgs::Float32 temp_msg;
-    temp_msg.data = r.temperature.get_scaled(0);
-    temp_pub.publish(temp_msg);
-  }
+  // if (temp_pub.getNumSubscribers() > 0)
+  // {
+  //   std_msgs::Float32 temp_msg;
+  //   temp_msg.data = r.temperature.get_scaled(0);
+  //   temp_pub.publish(temp_msg);
+  // }
 }
 
 /**
@@ -453,25 +478,29 @@ int main(int argc, char **argv)
   int32_t baud;
 
   ros::NodeHandle imu_nh("imu"), private_nh("~");
-  private_nh.param<std::string>("port", port, "/dev/ttyUSB0");
-  private_nh.param<int32_t>("baud", baud, 115200);
+  if (!private_nh.param<std::string>("/port", port, "/dev/ttyUSB0")){
+    ROS_WARN("MAIN : Param port not found, set to /dev/ttyUSB0");
+  }
+  if (!private_nh.param<int32_t>("/baud", baud, 115200)){
+    ROS_WARN("MAIN : Param baud not found, set to 115200");
+  }
 
 
   sensor_msgs::Imu imu_msg;
   double linear_acceleration_stdev, angular_velocity_stdev;
-  private_nh.param<std::string>("frame_id", imu_msg.header.frame_id, "imu_link");
+  private_nh.param<std::string>("/frame_id", imu_msg.header.frame_id, "imu_link");
   // Defaults obtained experimentally from hardware, no device spec exists
-  private_nh.param<double>("linear_acceleration_stdev", linear_acceleration_stdev, (4.0 * 1e-3f * 9.80665));
-  private_nh.param<double>("angular_velocity_stdev", angular_velocity_stdev, (0.06 * 3.14159 / 180.0));
+  private_nh.param<double>("/linear_acceleration_stdev", linear_acceleration_stdev, (4.0 * 1e-3f * 9.80665));
+  private_nh.param<double>("/angular_velocity_stdev", angular_velocity_stdev, (0.06 * 3.14159 / 180.0));
 
   double linear_acceleration_cov = linear_acceleration_stdev * linear_acceleration_stdev;
   double angular_velocity_cov = angular_velocity_stdev * angular_velocity_stdev;
 
   // From the UM7 datasheet for the dynamic accuracy from the EKF.
   double orientation_x_stdev, orientation_y_stdev, orientation_z_stdev;
-  private_nh.param<double>("orientation_x_stdev", orientation_x_stdev, (3.0 * 3.14159 / 180.0));
-  private_nh.param<double>("orientation_y_stdev", orientation_y_stdev, (3.0 * 3.14159 / 180.0));
-  private_nh.param<double>("orientation_z_stdev", orientation_z_stdev, (5.0 * 3.14159 / 180.0));
+  private_nh.param<double>("/orientation_x_stdev", orientation_x_stdev, (3.0 * 3.14159 / 180.0));
+  private_nh.param<double>("/orientation_y_stdev", orientation_y_stdev, (3.0 * 3.14159 / 180.0));
+  private_nh.param<double>("/orientation_z_stdev", orientation_z_stdev, (5.0 * 3.14159 / 180.0));
 
   double orientation_x_covar = orientation_x_stdev * orientation_x_stdev;
   double orientation_y_covar = orientation_y_stdev * orientation_y_stdev;
@@ -480,8 +509,12 @@ int main(int argc, char **argv)
   // Enable converting from NED to ENU by default
   bool tf_ned_to_enu;
   bool orientation_in_robot_frame;
-  private_nh.param<bool>("tf_ned_to_enu", tf_ned_to_enu, false);
-  private_nh.param<bool>("orientation_in_robot_frame", orientation_in_robot_frame, true);
+  if (!private_nh.param<bool>("/tf_ned_to_enu", tf_ned_to_enu, false)){
+    ROS_WARN("MAIN : Param tf_ned_to_enu not found, set to false");
+  }
+  if (!private_nh.param<bool>("/orientation_in_robot_frame", orientation_in_robot_frame, false)){
+    ROS_WARN("MAIN : Param orientation_in_robot_frame not found, set to false");
+  }
   OutputAxisOption axes = OutputAxisOptions::DEFAULT;
   if (tf_ned_to_enu && orientation_in_robot_frame)
   {
@@ -498,7 +531,7 @@ int main(int argc, char **argv)
 
   // Use MagneticField message rather than Vector3Stamped.
   bool use_magnetic_field_msg;
-  private_nh.param<bool>("use_magnetic_field_msg", use_magnetic_field_msg, false);
+  private_nh.param<bool>("/use_magnetic_field_msg", use_magnetic_field_msg, false);
 
   // These values do not need to be converted
   imu_msg.linear_acceleration_covariance[0] = linear_acceleration_cov;
@@ -515,8 +548,6 @@ int main(int argc, char **argv)
 
   // Real Time Loop
   bool first_failure = true;
-  int i = 0;
-
 
   serial::Serial ser;
 
@@ -544,7 +575,14 @@ int main(int argc, char **argv)
       try
       {
         um7::Comms sensor(&ser);
-        configureSensor(&sensor, &private_nh);
+        bool sensor_setup;
+        if(!private_nh.param<bool>("/sensor_setup", sensor_setup, true)){
+          ROS_WARN("MAIN : Param sensor_setup not found, set to true");
+        }
+        if(sensor_setup){
+          configureSensor(&sensor, &private_nh);
+          ROS_INFO("SETTING UP SENSOR'S BAUDRATE, RATES AND ZERO_GYROS");
+        }
         um7::Registers registers;
         ros::ServiceServer srv = imu_nh.advertiseService<um7::Reset::Request, um7::Reset::Response>(
             "reset", boost::bind(handleResetService, &sensor, _1, _2));

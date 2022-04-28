@@ -1,26 +1,29 @@
-# ## Serial parameters
-# port: "/dev/ttyUSB0"
-# baud: 921600
+## Sensor setup
+sensor_setup: true
 
-# ## IMU parameters
-# frame_id: "imu_link"
+## Serial parameters
+port: "/dev/ttyUSB0"
+baud: 115200
+
+## IMU parameters
+frame_id: "imu_link"
 
 ## Frame
 tf_ned_to_enu: false
-orientation_in_robot_frame: false
+orientation_in_robot_frame: true
 
-# ## Magnetic field
-# use_magnetic_field_msg: false
+## Magnetic field
+use_magnetic_field_msg: true
 
-# ## Update rate
-# update_rate: 255
+## Update rate
+update_rate: 255
 
-# ## EKF
-# mag_updates: true
+## EKF
+mag_updates: true
 
-# ## Quaternion
-# quat_mode: true
+## Quaternion
+quat_mode: true
 
-# ## Zero gyros
-# zero_gyros: true
+## Zero gyros
+zero_gyros: true
 
